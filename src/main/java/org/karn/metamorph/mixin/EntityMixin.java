@@ -95,11 +95,6 @@ public abstract class EntityMixin implements MetamorphAPI {
         this.sendToAll(players, new EntitySetHeadYawS2CPacket(this.metamorphOrigin, (byte) ((int) (this.getHeadYaw() * 256.0F / 360.0F))));
     }
 
-    @Override
-    public void MetamorphAs(Entity entity) {
-        this.MetamorphAs(entity.getType());
-    }
-
     private void sendToAll(List<ServerPlayerEntity> players, Packet<?> packet) {
         for (ServerPlayerEntity player : players) {
             player.networkHandler.sendPacket(packet);

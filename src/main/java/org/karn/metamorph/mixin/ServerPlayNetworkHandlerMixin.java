@@ -34,10 +34,10 @@ public abstract class ServerPlayNetworkHandlerMixin {
     @Unique private boolean MetamorphSkipCheck;
 
     @Inject(
-            method = "sendPacket(Lnet/minecraft/network/Packet;Lnet/minecraft/network/PacketCallbacks;)V",
+            method = "sendPacket(Lnet/minecraft/network/packet/Packet;Lnet/minecraft/network/PacketCallbacks;)V",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/network/ClientConnection;send(Lnet/minecraft/network/Packet;Lnet/minecraft/network/PacketCallbacks;)V"
+                    target = "Lnet/minecraft/network/ClientConnection;send(Lnet/minecraft/network/packet/Packet;Lnet/minecraft/network/PacketCallbacks;)V"
             ),
             cancellable = true
     )
@@ -119,7 +119,7 @@ public abstract class ServerPlayNetworkHandlerMixin {
             spawnPacket = entity.createSpawnPacket();
         else
             spawnPacket = FakePackets.EntitySpawnPacket(entity);
-
+        this.MetamorphSkipCheck = true;
         if (entity.getId() == this.player.getId()) {
             // We must treat disguised player differently
             // Why, I hear you ask ..?
@@ -142,5 +142,6 @@ public abstract class ServerPlayNetworkHandlerMixin {
             this.sendPacket(spawnPacket);
             ci.cancel();
         }
+        this.MetamorphSkipCheck = false;
     }
 }

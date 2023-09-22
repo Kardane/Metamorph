@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_17",
   "mixins": [
     "EntityMixin",
+    "ServerPlayNetworkHandlerMixin",
     "accessor.EntitiesDestroyS2CPacketAccessor",
     "accessor.EntityAccessor",
     "accessor.EntityAttributesS2CPacketAccessor",
