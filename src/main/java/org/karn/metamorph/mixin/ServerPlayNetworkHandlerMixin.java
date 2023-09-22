@@ -34,7 +34,7 @@ public abstract class ServerPlayNetworkHandlerMixin {
     @Unique private boolean MetamorphSkipCheck;
 
     @Inject(
-            method = "sendPacket()V",
+            method = "sendPacket(Lnet/minecraft/network/Packet;Lnet/minecraft/network/PacketCallbacks;)V",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/network/ClientConnection;send(Lnet/minecraft/network/Packet;Lnet/minecraft/network/PacketCallbacks;)V"
