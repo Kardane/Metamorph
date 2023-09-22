@@ -2,6 +2,7 @@ package org.karn.metamorph.api;
 
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
+import org.jetbrains.annotations.Nullable;
 
 public interface MetamorphAPI {
     void updateMetamorph();
@@ -17,4 +18,6 @@ public interface MetamorphAPI {
     EntityType<?> getMetamorphType();
 
     Entity getMetamorphEntity();
+
+    void UpdateMetamorphData();
 }

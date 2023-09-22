@@ -4,8 +4,16 @@
   "package": "org.karn.metamorph.mixin",
   "compatibilityLevel": "JAVA_17",
   "mixins": [
-  ],
-  "client": [
+    "EntityMixin",
+    "accessor.EntitiesDestroyS2CPacketAccessor",
+    "accessor.EntityAccessor",
+    "accessor.EntityAttributesS2CPacketAccessor",
+    "accessor.EntityPositionS2CPacketAccessor",
+    "accessor.EntitySetHeadYawS2CPacketAccessor",
+    "accessor.EntitySpawnS2CPacketAccessor",
+    "accessor.EntityTrackerEntryAccessor",
+    "accessor.EntityTrackerUpdateS2CPacketAccessor",
+    "accessor.ThreadedAnvilChunkStorageAccessor"
   ],
   "injectors": {
     "defaultRequire": 1
