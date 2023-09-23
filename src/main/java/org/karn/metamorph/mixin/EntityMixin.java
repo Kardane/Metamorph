@@ -51,6 +51,8 @@ public abstract class EntityMixin implements MetamorphAPI {
     @Shadow public abstract boolean isOnFire();
     @Shadow public abstract Text getDisplayName();
 
+    @Shadow public abstract void sendMessage(Text message);
+
     @Override
     public boolean isMetamorph() {
         return this.metamorphEntity != null;
@@ -75,8 +77,13 @@ public abstract class EntityMixin implements MetamorphAPI {
         if (this.metamorphEntity == null || this.metamorphEntity.getType() != entityType)
             this.metamorphEntity = entityType.create(world);
 
-        if(this.metamorphEntity instanceof MobEntity)
+        this.sendMessage(Text.literal(this.metamorphEntity.toString()));
+
+        if(this.metamorphEntity instanceof MobEntity) {
             ((MobEntity) this.metamorphEntity).setAiDisabled(true);
+            ((MobEntity) this.metamorphEntity).setPersistent();
+        }
+
         this.metamorphEntity.setSilent(true);
         this.metamorphEntity.setNoGravity(true);
 
@@ -87,12 +94,13 @@ public abstract class EntityMixin implements MetamorphAPI {
 
         // Updating entity on the client
         List<ServerPlayerEntity> players = this.getDimensionPlayersWithoutSelf(manager, worldRegistryKey);
-        //this.sendToAll(players, new EntitiesDestroyS2CPacket(this.id));
+        this.sendMessage(Text.literal(players.toString()));
         this.sendToAll(players, new EntitySpawnS2CPacket(this.metamorphOrigin));// will be replaced by network handler
 
         this.sendToAll(players, new EntityTrackerUpdateS2CPacket(this.id, this.getDataTracker().getChangedEntries()));
         this.sendToAll(players, new EntityEquipmentUpdateS2CPacket(this.id, this.metamorphEquipment()));
         this.sendToAll(players, new EntitySetHeadYawS2CPacket(this.metamorphOrigin, (byte) ((int) (this.getHeadYaw() * 256.0F / 360.0F))));
+        this.sendMessage(Text.literal(this.metamorphEntity.toString()));
     }
 
     private void sendToAll(List<ServerPlayerEntity> players, Packet<?> packet) {
@@ -138,6 +146,10 @@ public abstract class EntityMixin implements MetamorphAPI {
     @Inject(method = "tick()V", at = @At("TAIL"))
     private void postTick(CallbackInfo ci) {
         if(this.isMetamorph()) {
+            if(this.world.getServer().getTicks() % 100 == 0){
+                this.sendMessage(Text.literal(this.metamorphEntity.toString()));
+            }
+
             if(this.world.getServer() != null && !(this.metamorphEntity instanceof LivingEntity))
                 //LivingEntity가 아니면 위치 패킷 포내기
                 this.world.getServer().getPlayerManager().sendToDimension(new EntityPositionS2CPacket(this.metamorphOrigin), this.world.getRegistryKey());

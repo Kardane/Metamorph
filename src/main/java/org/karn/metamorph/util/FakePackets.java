@@ -4,22 +4,37 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.s2c.play.EntitySpawnS2CPacket;
+import net.minecraft.network.packet.s2c.play.PlayerSpawnS2CPacket;
+import net.minecraft.text.Text;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.karn.metamorph.api.MetamorphAPI;
 import org.karn.metamorph.mixin.accessor.EntitySpawnS2CPacketAccessor;
 
 public class FakePackets {
-    public static Packet<?> EntitySpawnPacket(Entity entity){
+    public static Packet<?> universalSpawnPacket(Entity entity) {
         Entity metamorphEntity = ((MetamorphAPI) entity).getMetamorphEntity();
         if(metamorphEntity == null) {
             metamorphEntity = entity;
         }
-        MetamorphAPI meta = (MetamorphAPI) metamorphEntity;
-        Packet<?> packet = metamorphEntity.createSpawnPacket();
-        EntitySpawnS2CPacket entitypacket = new EntitySpawnS2CPacket(meta.getMetamorphEntity());
 
-        EntitySpawnS2CPacketAccessor accessor = (EntitySpawnS2CPacketAccessor) entitypacket;
+        try {
+            Packet<?> packet = metamorphEntity.createSpawnPacket();
+            entity.getServer().sendMessage(Text.literal(packet.toString()));
+            if(packet instanceof EntitySpawnS2CPacket) {
+                packet = EntitySpawnPacket(entity);
+            }
+
+            return packet;
+        } catch (Throwable e) {
+            return entity.createSpawnPacket();
+        }
+    }
+    public static Packet<?> EntitySpawnPacket(Entity entity){
+        MetamorphAPI meta = (MetamorphAPI) entity;
+        EntitySpawnS2CPacket packet = new EntitySpawnS2CPacket(meta.getMetamorphEntity());
+
+        EntitySpawnS2CPacketAccessor accessor = (EntitySpawnS2CPacketAccessor) packet;
         accessor.setEntityId(entity.getId());
         accessor.setUuid(entity.getUuid());
 
@@ -43,7 +58,6 @@ public class FakePackets {
         accessor.setVelocityY((int) (f * 8000.0D));
         accessor.setVelocityZ((int) (g * 8000.0D));
 
-        packet = entitypacket;
         return packet;
     }
 }

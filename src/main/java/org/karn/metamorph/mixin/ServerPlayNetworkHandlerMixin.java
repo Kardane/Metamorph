@@ -1,17 +1,23 @@
 package org.karn.metamorph.mixin;
 
+import com.mojang.authlib.GameProfile;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.data.DataTracker;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.network.PacketCallbacks;
+import net.minecraft.network.listener.ClientPlayPacketListener;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.s2c.play.*;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayNetworkHandler;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
 import net.minecraft.world.World;
 import org.karn.metamorph.api.MetamorphAPI;
 import org.karn.metamorph.mixin.accessor.*;
 import org.karn.metamorph.util.FakePackets;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -19,9 +25,9 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 import static org.karn.metamorph.Metamorph.METAMORPH_TEAM;
 
@@ -29,6 +35,8 @@ import static org.karn.metamorph.Metamorph.METAMORPH_TEAM;
 public abstract class ServerPlayNetworkHandlerMixin {
     @Shadow public ServerPlayerEntity player;
     @Shadow public abstract void sendPacket(Packet<?> packet);
+
+    @Shadow @Final private MinecraftServer server;
     @Unique private final Set<Packet<?>> MetaMorphQ = new HashSet<>();
     @Unique private boolean MetamorphSentTeamPacket;
     @Unique private boolean MetamorphSkipCheck;
@@ -41,107 +49,144 @@ public abstract class ServerPlayNetworkHandlerMixin {
             ),
             cancellable = true
     )
-    private void metamorphEntity(Packet<?> packet, PacketCallbacks callbacks, CallbackInfo ci) {
+    private void metamorphEntity(Packet<ClientPlayPacketListener> packet, PacketCallbacks callbacks, CallbackInfo ci) {
         if (!this.MetamorphSkipCheck) {
-            World world = this.player.getEntityWorld();
-            Entity entity = null;
-            if (packet instanceof EntitySpawnS2CPacket) {
-                entity = world.getEntityById(((EntitySpawnS2CPacketAccessor) packet).getEntityId());
-            } else if (packet instanceof EntitiesDestroyS2CPacket && ((EntitiesDestroyS2CPacketAccessor) packet).getEntityIds().getInt(0) == this.player.getId()) {
-                ci.cancel();
-                return;
-            } else if(packet instanceof EntityTrackerUpdateS2CPacket) {
-                // an ugly fix for #6
-                int entityId = ((EntityTrackerUpdateS2CPacketAccessor) packet).getEntityId();
-                if(entityId == this.player.getId() && ((MetamorphAPI) this.player).isMetamorph()) {
-                    List<DataTracker.SerializedEntry<?>> trackedValues = this.player.getDataTracker().getChangedEntries();
-                    Byte flags = this.player.getDataTracker().get(EntityAccessor.getFLAGS());
-                    boolean removed = trackedValues.removeIf(entry -> entry.value().equals(flags));
-                    if(removed) {
-                        DataTracker.SerializedEntry<Byte> fakeInvisibleFlag = DataTracker.SerializedEntry.of(EntityAccessor.getFLAGS(), (byte) (flags | 1 << 5));
-                        trackedValues.add(fakeInvisibleFlag);
-                    }
-                    ((EntityTrackerUpdateS2CPacketAccessor) packet).setTrackedValues(trackedValues);
-                } else {
-                    Entity original = world.getEntityById(entityId);
+            if (packet instanceof BundleS2CPacket bundleS2CPacket) {
+                if (bundleS2CPacket.getPackets() instanceof ArrayList<Packet<ClientPlayPacketListener>> list) {
+                    var list2 = new ArrayList<Packet<ClientPlayPacketListener>>();
+                    var adder = new ArrayList<Packet<ClientPlayPacketListener>>();
+                    var atomic = new AtomicBoolean(true);
+                    for (var packet2 : list) {
+                        atomic.set(true);
+                        adder.clear();
+                        this.metamorphTransformPacket(packet2, () -> atomic.set(false), list2::add);
 
-                    if(original != null && ((MetamorphAPI) original).isMetamorph()) {
-                        Entity disguised = ((MetamorphAPI) original).getMetamorphEntity();
-                        if(disguised != null) {
-                            ((MetamorphAPI) original).updateMetamorph();
-                            List<DataTracker.SerializedEntry<?>> trackedValues = disguised.getDataTracker().getChangedEntries();
-                            ((EntityTrackerUpdateS2CPacketAccessor) packet).setTrackedValues(trackedValues);
+                        if (atomic.get()) {
+                            list2.add(packet2);
                         }
+
+                        list2.addAll(adder);
                     }
-                }
-                return;
-            } else if(packet instanceof EntityAttributesS2CPacket) {
-                // Fixing #2
-                // Another client spam
-                // Entity attributes "cannot" be sent for non-living entities
-                Entity original = world.getEntityById(((EntityAttributesS2CPacketAccessor) packet).getEntityId());
-                MetamorphAPI entityDisguise = (MetamorphAPI) original;
 
-                if(original != null && entityDisguise.isMetamorph() && !((MetamorphAPI) original).getMetamorphEntity().isLiving()) {
-                    ci.cancel();
-                    return;
+                    list.clear();
+                    list.addAll(list2);
                 }
-            } else if(packet instanceof EntityVelocityUpdateS2CPacket velocityPacket) {
-                int id = velocityPacket.getId();
-                if(id != this.player.getId()) {
-
-                    Entity entity1 = world.getEntityById(id);
-                    if(entity1 != null && ((MetamorphAPI) entity1).isMetamorph()) {
-                        // Cancels some client predictions
-                        ci.cancel();
-                    }
-                }
-            }
-
-            if(entity != null) {
-                metamorphsendFakePacket(entity, ci);
+            } else {
+                this.metamorphTransformPacket(packet, ci::cancel, this::sendPacket);
             }
         }
     }
 
-    /**
-     * Sends fake packet instead of the real one.
-     *
-     * @param entity the entity that is disguised and needs to have a custom packet sent.
-     */
     @Unique
-    private void metamorphsendFakePacket(Entity entity, CallbackInfo ci) {
-        MetamorphAPI meta = (MetamorphAPI) entity;
-        Entity disguiseEntity = meta.getMetamorphEntity();
+    private void metamorphTransformPacket(Packet<ClientPlayPacketListener> packet, Runnable remove, Consumer<Packet<ClientPlayPacketListener>> add) {
+        World world = this.player.getEntityWorld();
+        Entity entity = null;
+        if (packet instanceof EntitySpawnS2CPacket) {
+            this.server.sendMessage(Text.literal("entity spawn packet: "));
+            entity = world.getEntityById(((EntitySpawnS2CPacketAccessor) packet).getEntityId());
+        } else if (packet instanceof EntitiesDestroyS2CPacket && ((EntitiesDestroyS2CPacketAccessor) packet).getEntityIds().getInt(0) == this.player.getId()) {
+            this.server.sendMessage(Text.literal("entity remove packet: "));
+            remove.run();
+            return;
+        } else if(packet instanceof EntityTrackerUpdateS2CPacket) {
+            this.server.sendMessage(Text.literal("entity metamorph tracker packet1 "));
+            int entityId = ((EntityTrackerUpdateS2CPacketAccessor) packet).getEntityId();
+            if(entityId == this.player.getId() && ((MetamorphAPI) this.player).isMetamorph()) {
+                this.server.sendMessage(Text.literal("entity metamorph tracker packet2 "));
+                List<DataTracker.SerializedEntry<?>> trackedValues = this.player.getDataTracker().getChangedEntries();
+                Byte flags = this.player.getDataTracker().get(EntityAccessor.getFLAGS());
 
-        Packet<?> spawnPacket;
-        if(!meta.isMetamorph())
-            spawnPacket = entity.createSpawnPacket();
-        else
-            spawnPacket = FakePackets.EntitySpawnPacket(entity);
-        this.MetamorphSkipCheck = true;
-        if (entity.getId() == this.player.getId()) {
-            // We must treat disguised player differently
-            // Why, I hear you ask ..?
-            // Well, sending spawn packet of the new entity makes the player not being able to move :(
-            if (meta.getMetamorphType() != EntityType.PLAYER && meta.isMetamorph()) {
-                if (disguiseEntity != null) {
-                    if (spawnPacket instanceof EntitySpawnS2CPacket) {
-                        ((EntitySpawnS2CPacketAccessor) spawnPacket).setEntityId(disguiseEntity.getId());
-                        ((EntitySpawnS2CPacketAccessor) spawnPacket).setUuid(disguiseEntity.getUuid());
+                boolean removed = trackedValues.removeIf(entry -> entry.value().equals(flags));
+                this.server.sendMessage(Text.literal(String.valueOf(removed)));
+                if(removed) {
+                    DataTracker.SerializedEntry<Byte> fakeInvisibleFlag = DataTracker.SerializedEntry.of(EntityAccessor.getFLAGS(), (byte) (flags | 1 << 5));
+                    trackedValues.add(fakeInvisibleFlag);
+                }
+
+                ((EntityTrackerUpdateS2CPacketAccessor) packet).setTrackedValues(trackedValues);
+            } else {
+                Entity original = world.getEntityById(entityId);
+                this.server.sendMessage(Text.literal("entity metamorph tracker packet3 "));
+                if(original != null && ((MetamorphAPI) original).isMetamorph()) {
+                    Entity disguised = ((MetamorphAPI) original).getMetamorphEntity();
+                    this.server.sendMessage(Text.literal("entity metamorph tracker packet4 "));
+                    if(disguised != null) {
+                        this.server.sendMessage(Text.literal("entity metamorph tracker packet5 "));
+                        ((MetamorphAPI) original).updateMetamorph();
+                        List<DataTracker.SerializedEntry<?>> trackedValues = disguised.getDataTracker().getChangedEntries();
+                        ((EntityTrackerUpdateS2CPacketAccessor) packet).setTrackedValues(trackedValues);
                     }
-                    disguiseEntity.startRiding(this.player, true);
-                    this.sendPacket(spawnPacket);
-
-                    TeamS2CPacket joinTeamPacket = TeamS2CPacket.changePlayerTeam(METAMORPH_TEAM, this.player.getGameProfile().getName(), TeamS2CPacket.Operation.ADD); // join team
-                    this.sendPacket(joinTeamPacket);
                 }
             }
-            ci.cancel();
-        } else if(meta.isMetamorph()) {
-            this.sendPacket(spawnPacket);
-            ci.cancel();
+            return;
+        } else if(packet instanceof EntityAttributesS2CPacket) {
+            this.server.sendMessage(Text.literal("entity attribute packet: "));
+            // Fixing #2
+            // Another client spam
+            // Entity attributes "cannot" be sent for non-living entities
+            Entity original = world.getEntityById(((EntityAttributesS2CPacketAccessor) packet).getEntityId());
+            MetamorphAPI entityDisguise = (MetamorphAPI) original;
+
+            if(original != null && entityDisguise.isMetamorph() && !original.isLiving()) {
+                remove.run();
+                return;
+            }
+        } else if(packet instanceof EntityVelocityUpdateS2CPacket velocityPacket) {
+            this.server.sendMessage(Text.literal("entity velocity packet: "));
+            int id = velocityPacket.getId();
+            if(id != this.player.getId()) {
+
+                Entity entity1 = world.getEntityById(id);
+                if(entity1 != null && ((MetamorphAPI) entity1).isMetamorph()) {
+                    // Cancels some client predictions
+                    remove.run();
+                }
+            }
         }
+
+        if(entity != null) {
+            metamorphSendFakePacket(entity, remove, add);
+        }
+    }
+
+    @Unique
+    private void metamorphSendFakePacket(Entity entity, Runnable remove, Consumer<Packet<ClientPlayPacketListener>> add) {
+        MetamorphAPI disguise = (MetamorphAPI) entity;
+        Entity disguiseEntity = disguise.getMetamorphEntity();
+
+        Packet<?> spawnPacket;
+        if(!disguise.isMetamorph()){
+            spawnPacket = entity.createSpawnPacket();
+        }
+        else {
+            spawnPacket = FakePackets.EntitySpawnPacket(entity);
+        }
+
+        this.MetamorphSkipCheck = true;
+        if (entity.getId() == this.player.getId()) {
+            if (disguise.getMetamorphType() != EntityType.PLAYER && disguise.isMetamorph()) {
+                if (disguiseEntity != null) {
+                    if (spawnPacket instanceof EntitySpawnS2CPacket) {
+                        if(disguiseEntity == null){
+                            return;
+                        } else {
+                            ((EntitySpawnS2CPacketAccessor) spawnPacket).setEntityId(disguiseEntity.getId());
+                            ((EntitySpawnS2CPacketAccessor) spawnPacket).setUuid(disguiseEntity.getUuid());
+                        }
+                    }
+                    disguiseEntity.startRiding(this.player, true);
+                    add.accept((Packet<ClientPlayPacketListener>) spawnPacket);
+
+                    TeamS2CPacket joinTeamPacket = TeamS2CPacket.changePlayerTeam(METAMORPH_TEAM, this.player.getGameProfile().getName(), TeamS2CPacket.Operation.ADD); // join team
+                    add.accept(joinTeamPacket);
+                }
+            }
+            remove.run();
+        } else if(disguise.isMetamorph()) {
+            add.accept((Packet<ClientPlayPacketListener>) spawnPacket);
+            remove.run();
+        }
+
         this.MetamorphSkipCheck = false;
     }
 }
