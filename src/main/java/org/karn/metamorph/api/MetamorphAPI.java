@@ -1,5 +1,6 @@
 package org.karn.metamorph.api;
 
+import com.mojang.authlib.GameProfile;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import org.jetbrains.annotations.Nullable;
@@ -20,4 +21,6 @@ public interface MetamorphAPI {
     Entity getMetamorphEntity();
 
     void UpdateMetamorphData();
+
+    void setGameProfile(@Nullable GameProfile gameProfile);
 }

@@ -82,37 +82,30 @@ public abstract class ServerPlayNetworkHandlerMixin {
         World world = this.player.getEntityWorld();
         Entity entity = null;
         if (packet instanceof EntitySpawnS2CPacket) {
-            this.server.sendMessage(Text.literal("entity spawn packet: "));
             entity = world.getEntityById(((EntitySpawnS2CPacketAccessor) packet).getEntityId());
         } else if (packet instanceof EntitiesDestroyS2CPacket && ((EntitiesDestroyS2CPacketAccessor) packet).getEntityIds().getInt(0) == this.player.getId()) {
-            this.server.sendMessage(Text.literal("entity remove packet: "));
             remove.run();
             return;
         } else if(packet instanceof EntityTrackerUpdateS2CPacket) {
-            this.server.sendMessage(Text.literal("entity metamorph tracker packet1 "));
             int entityId = ((EntityTrackerUpdateS2CPacketAccessor) packet).getEntityId();
             if(entityId == this.player.getId() && ((MetamorphAPI) this.player).isMetamorph()) {
-                this.server.sendMessage(Text.literal("entity metamorph tracker packet2 "));
                 List<DataTracker.SerializedEntry<?>> trackedValues = this.player.getDataTracker().getChangedEntries();
                 Byte flags = this.player.getDataTracker().get(EntityAccessor.getFLAGS());
 
                 boolean removed = trackedValues.removeIf(entry -> entry.value().equals(flags));
-                this.server.sendMessage(Text.literal(String.valueOf(removed)));
-                if(removed) {
+                //this.server.sendMessage(Text.literal(String.valueOf(removed)));
+                /*if(removed) {
                     DataTracker.SerializedEntry<Byte> fakeInvisibleFlag = DataTracker.SerializedEntry.of(EntityAccessor.getFLAGS(), (byte) (flags | 1 << 5));
                     trackedValues.add(fakeInvisibleFlag);
-                }
+                }*/
 
                 ((EntityTrackerUpdateS2CPacketAccessor) packet).setTrackedValues(trackedValues);
             } else {
                 Entity original = world.getEntityById(entityId);
-                this.server.sendMessage(Text.literal("entity metamorph tracker packet3 "));
                 if(original != null && ((MetamorphAPI) original).isMetamorph()) {
                     Entity disguised = ((MetamorphAPI) original).getMetamorphEntity();
-                    this.server.sendMessage(Text.literal("entity metamorph tracker packet4 "));
                     if(disguised != null) {
-                        this.server.sendMessage(Text.literal("entity metamorph tracker packet5 "));
-                        ((MetamorphAPI) original).updateMetamorph();
+                        ((MetamorphAPI) original).UpdateMetamorphData();
                         List<DataTracker.SerializedEntry<?>> trackedValues = disguised.getDataTracker().getChangedEntries();
                         ((EntityTrackerUpdateS2CPacketAccessor) packet).setTrackedValues(trackedValues);
                     }
@@ -120,9 +113,6 @@ public abstract class ServerPlayNetworkHandlerMixin {
             }
             return;
         } else if(packet instanceof EntityAttributesS2CPacket) {
-            this.server.sendMessage(Text.literal("entity attribute packet: "));
-            // Fixing #2
-            // Another client spam
             // Entity attributes "cannot" be sent for non-living entities
             Entity original = world.getEntityById(((EntityAttributesS2CPacketAccessor) packet).getEntityId());
             MetamorphAPI entityDisguise = (MetamorphAPI) original;
@@ -131,7 +121,7 @@ public abstract class ServerPlayNetworkHandlerMixin {
                 remove.run();
                 return;
             }
-        } else if(packet instanceof EntityVelocityUpdateS2CPacket velocityPacket) {
+        }/* else if(packet instanceof EntityVelocityUpdateS2CPacket velocityPacket) {
             this.server.sendMessage(Text.literal("entity velocity packet: "));
             int id = velocityPacket.getId();
             if(id != this.player.getId()) {
@@ -142,7 +132,7 @@ public abstract class ServerPlayNetworkHandlerMixin {
                     remove.run();
                 }
             }
-        }
+        }*/
 
         if(entity != null) {
             metamorphSendFakePacket(entity, remove, add);
